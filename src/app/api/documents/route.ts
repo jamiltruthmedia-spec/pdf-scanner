@@ -1,7 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import Tesseract from 'tesseract.js';
+
+// In-memory storage for prototype (replace with Supabase later)
+// Note: This resets on each deploy/restart - just for testing!
+const documents: Map<string, {
+  id: string;
+  filename: string;
+  jobNumber: string | null;
+  formulaId: string | null;
+  productName: string | null;
+  extractedText: string;
+  uploadedAt: string;
+  fileUrl: string | null;
+  pageCount: number;
+  metadata: Record<string, unknown>;
+}> = new Map();
 
 // Extract job number, formula ID, and product name from OCR text
 function extractMetadata(text: string) {
@@ -40,49 +54,33 @@ function extractMetadata(text: string) {
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const query = searchParams.get('q');
+    const query = searchParams.get('q')?.toLowerCase();
     const jobNumber = searchParams.get('jobNumber');
     const formulaId = searchParams.get('formulaId');
 
-    let dbQuery = supabaseAdmin
-      .from('pdf_documents')
-      .select('*')
-      .order('uploaded_at', { ascending: false });
+    let results = Array.from(documents.values());
 
+    // Apply filters
     if (jobNumber) {
-      dbQuery = dbQuery.eq('job_number', jobNumber);
+      results = results.filter(doc => doc.jobNumber === jobNumber);
     }
 
     if (formulaId) {
-      dbQuery = dbQuery.eq('formula_id', formulaId);
+      results = results.filter(doc => doc.formulaId === formulaId);
     }
 
     if (query) {
-      dbQuery = dbQuery.ilike('extracted_text', `%${query}%`);
+      results = results.filter(doc => 
+        doc.extractedText.toLowerCase().includes(query) ||
+        doc.filename.toLowerCase().includes(query) ||
+        doc.productName?.toLowerCase().includes(query)
+      );
     }
 
-    const { data, error } = await dbQuery;
+    // Sort by upload date (newest first)
+    results.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
 
-    if (error) {
-      console.error('Supabase error:', error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // Transform snake_case to camelCase
-    const documents = data?.map(doc => ({
-      id: doc.id,
-      filename: doc.filename,
-      jobNumber: doc.job_number,
-      formulaId: doc.formula_id,
-      productName: doc.product_name,
-      extractedText: doc.extracted_text,
-      uploadedAt: doc.uploaded_at,
-      fileUrl: doc.file_url,
-      pageCount: doc.page_count,
-      metadata: doc.metadata,
-    })) || [];
-
-    return NextResponse.json({ documents });
+    return NextResponse.json({ documents: results });
   } catch (error) {
     console.error('Error fetching documents:', error);
     return NextResponse.json(
@@ -109,23 +107,23 @@ export async function POST(request: NextRequest) {
     const mimeType = file.type;
 
     // For images, run OCR directly
-    // For PDFs, we'd need to convert pages to images first (future enhancement)
     let extractedText = '';
 
     if (mimeType.startsWith('image/')) {
       const dataUrl = `data:${mimeType};base64,${base64}`;
       
+      console.log('Starting OCR for:', filename);
       const result = await Tesseract.recognize(dataUrl, 'eng', {
-        logger: (m) => console.log(m),
+        logger: (m) => console.log('OCR:', m.status, m.progress),
       });
       
       extractedText = result.data.text;
+      console.log('OCR complete, extracted', extractedText.length, 'characters');
     } else if (mimeType === 'application/pdf') {
-      // For PDF files, we'll store them but mark as needing image conversion
-      extractedText = '[PDF - Please upload as images for OCR processing]';
+      extractedText = '[PDF files need to be converted to images first. Please upload JPG/PNG screenshots of the batch sheets.]';
     } else {
       return NextResponse.json(
-        { error: 'Unsupported file type. Please upload images (JPG, PNG) or PDF.' },
+        { error: 'Unsupported file type. Please upload images (JPG, PNG).' },
         { status: 400 }
       );
     }
@@ -133,63 +131,39 @@ export async function POST(request: NextRequest) {
     // Extract metadata from OCR text
     const metadata = extractMetadata(extractedText);
 
-    // Upload file to Supabase Storage
-    const storagePath = `documents/${id}/${filename}`;
-    const { error: uploadError } = await supabaseAdmin.storage
-      .from('pdf-scanner')
-      .upload(storagePath, buffer, {
-        contentType: mimeType,
-      });
+    // Create document record
+    const doc = {
+      id,
+      filename,
+      jobNumber: metadata.jobNumber,
+      formulaId: metadata.formulaId,
+      productName: metadata.productName,
+      extractedText,
+      uploadedAt: new Date().toISOString(),
+      fileUrl: null, // Would be storage URL in production
+      pageCount: 1,
+      metadata: {},
+    };
 
-    let fileUrl: string | null = null;
-    if (!uploadError) {
-      const { data: urlData } = supabaseAdmin.storage
-        .from('pdf-scanner')
-        .getPublicUrl(storagePath);
-      fileUrl = urlData.publicUrl;
-    }
+    // Store in memory
+    documents.set(id, doc);
 
-    // Save document record to database
-    const { data: doc, error: dbError } = await supabaseAdmin
-      .from('pdf_documents')
-      .insert({
-        id,
-        filename,
-        job_number: metadata.jobNumber,
-        formula_id: metadata.formulaId,
-        product_name: metadata.productName,
-        extracted_text: extractedText,
-        file_url: fileUrl,
-        page_count: 1,
-        metadata: {},
-      })
-      .select()
-      .single();
-
-    if (dbError) {
-      console.error('Database error:', dbError);
-      return NextResponse.json({ error: dbError.message }, { status: 500 });
-    }
+    console.log('Document saved:', {
+      id,
+      filename,
+      jobNumber: metadata.jobNumber,
+      formulaId: metadata.formulaId,
+      productName: metadata.productName,
+    });
 
     return NextResponse.json({
       success: true,
-      document: {
-        id: doc.id,
-        filename: doc.filename,
-        jobNumber: doc.job_number,
-        formulaId: doc.formula_id,
-        productName: doc.product_name,
-        extractedText: doc.extracted_text,
-        uploadedAt: doc.uploaded_at,
-        fileUrl: doc.file_url,
-        pageCount: doc.page_count,
-        metadata: doc.metadata,
-      },
+      document: doc,
     });
   } catch (error) {
     console.error('Error processing document:', error);
     return NextResponse.json(
-      { error: 'Failed to process document' },
+      { error: 'Failed to process document: ' + (error as Error).message },
       { status: 500 }
     );
   }
