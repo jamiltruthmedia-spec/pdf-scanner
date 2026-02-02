@@ -64,11 +64,12 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false });
 
     if (jobNumber) {
-      dbQuery = dbQuery.eq('job_number', jobNumber);
+      // Use ilike for partial matching (e.g., "555" matches "555197")
+      dbQuery = dbQuery.ilike('job_number', `%${jobNumber}%`);
     }
 
     if (formulaId) {
-      dbQuery = dbQuery.eq('formula_id', formulaId);
+      dbQuery = dbQuery.ilike('formula_id', `%${formulaId}%`);
     }
 
     if (status) {
@@ -76,7 +77,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (query) {
-      dbQuery = dbQuery.ilike('extracted_text', `%${query}%`);
+      // Search across multiple fields using OR
+      dbQuery = dbQuery.or(`extracted_text.ilike.%${query}%,job_number.ilike.%${query}%,formula_id.ilike.%${query}%,product_name.ilike.%${query}%`);
     }
 
     const { data, error } = await dbQuery;
