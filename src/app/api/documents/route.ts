@@ -136,6 +136,7 @@ export async function POST(request: NextRequest) {
         .insert({
           id,
           filename,
+          content_type: mimeType,
           file_path: filePath,
           processing_status: 'pending',
           extracted_text: null,
@@ -182,6 +183,7 @@ export async function POST(request: NextRequest) {
         .insert({
           id,
           filename,
+          content_type: mimeType,
           job_number: metadata.jobNumber,
           formula_id: metadata.formulaId,
           product_name: metadata.productName,
