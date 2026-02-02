@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { getSupabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import Tesseract from 'tesseract.js';
 
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
       // PDF: Upload to Supabase storage, mark as pending for local worker
       const filePath = `uploads/${id}/${filename}`;
       
-      const { error: uploadError } = await supabase.storage
+      const { error: uploadError } = await getSupabase().storage
         .from('pdf-uploads')
         .upload(filePath, buffer, {
           contentType: mimeType,
