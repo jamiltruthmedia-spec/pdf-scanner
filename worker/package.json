@@ -1,0 +1,17 @@
+{
+  "name": "pdf-scanner-worker",
+  "version": "1.0.0",
+  "description": "Local PDF processor for PDF Scanner app",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "pdfjs-dist": "^4.0.379",
+    "tesseract.js": "^5.0.4",
+    "sharp": "^0.33.0"
+  }
+}

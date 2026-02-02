@@ -1,3 +1,5 @@
+export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
 export interface Document {
   id: string;
   filename: string;
@@ -6,8 +8,11 @@ export interface Document {
   productName: string | null;
   extractedText: string;
   uploadedAt: string;
-  fileUrl: string | null;
+  processedAt: string | null;
+  filePath: string | null;
   pageCount: number;
+  processingStatus: ProcessingStatus;
+  processingError: string | null;
   metadata: Record<string, unknown>;
 }
 
@@ -19,6 +24,8 @@ export interface SearchResult {
 
 export interface UploadResponse {
   success: boolean;
-  document?: Document;
+  queued?: boolean;
+  message?: string;
+  document?: Partial<Document>;
   error?: string;
 }
