@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     const formulaId = searchParams.get('formulaId');
     const status = searchParams.get('status');
 
-    let dbQuery = supabase
+    let dbQuery = getSupabase()
       .from('pdf_documents')
       .select('*')
       .order('uploaded_at', { ascending: false });
@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Create database record with pending status
-      const { data: doc, error: dbError } = await supabase
+      const { data: doc, error: dbError } = await getSupabase()
         .from('pdf_documents')
         .insert({
           id,
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
       const metadata = extractMetadata(extractedText);
 
       // Save to database
-      const { data: doc, error: dbError } = await supabase
+      const { data: doc, error: dbError } = await getSupabase()
         .from('pdf_documents')
         .insert({
           id,
