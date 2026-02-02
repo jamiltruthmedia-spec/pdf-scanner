@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
     let dbQuery = getSupabase()
       .from('pdf_documents')
       .select('*')
-      .order('uploaded_at', { ascending: false });
+      .order('created_at', { ascending: false });
 
     if (jobNumber) {
       dbQuery = dbQuery.eq('job_number', jobNumber);
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
       formulaId: doc.formula_id,
       productName: doc.product_name,
       extractedText: doc.extracted_text || '',
-      uploadedAt: doc.uploaded_at,
+      uploadedAt: doc.created_at,
       processedAt: doc.processed_at,
       filePath: doc.file_path,
       pageCount: doc.page_count,
@@ -157,7 +157,7 @@ export async function POST(request: NextRequest) {
           id: doc.id,
           filename: doc.filename,
           processingStatus: doc.processing_status,
-          uploadedAt: doc.uploaded_at,
+          uploadedAt: doc.created_at,
         },
       });
 
@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
           formulaId: doc.formula_id,
           productName: doc.product_name,
           extractedText: doc.extracted_text,
-          uploadedAt: doc.uploaded_at,
+          uploadedAt: doc.created_at,
           processedAt: doc.processed_at,
           pageCount: doc.page_count,
           processingStatus: doc.processing_status,
