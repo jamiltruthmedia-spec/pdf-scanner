@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import Tesseract from 'tesseract.js';
 
-// In-memory storage for prototype (replace with Supabase later)
-// Note: This resets on each deploy/restart - just for testing!
+// In-memory storage for prototype
 const documents: Map<string, {
   id: string;
   filename: string;
@@ -29,19 +28,20 @@ function extractMetadata(text: string) {
     productName: null,
   };
 
-  // Job # pattern: "Job #: 554992" or "Job # 554992" or "Job #554992"
-  const jobMatch = text.match(/Job\s*#[:\s]*(\d+)/i);
-  if (jobMatch) {
-    metadata.jobNumber = jobMatch[1];
+  // Job # pattern - find ALL job numbers in the document
+  const jobMatches = text.match(/Job\s*#[:\s]*(\d+)/gi);
+  if (jobMatches && jobMatches.length > 0) {
+    const numbers = jobMatches.map(m => m.match(/(\d+)/)?.[1]).filter(Boolean);
+    metadata.jobNumber = numbers[0] || null;
   }
 
-  // Formula ID pattern: "Formula ID 202076" or "Formula ID: 202076"
+  // Formula ID pattern
   const formulaMatch = text.match(/Formula\s*ID[:\s]*(\d+)/i);
   if (formulaMatch) {
     metadata.formulaId = formulaMatch[1];
   }
 
-  // Product name - look for "Name" field followed by text
+  // Product name
   const nameMatch = text.match(/Name[:\s]+([A-Za-z0-9%\s]+?)(?:\n|Gallons|Pounds)/i);
   if (nameMatch) {
     metadata.productName = nameMatch[1].trim();
@@ -60,7 +60,6 @@ export async function GET(request: NextRequest) {
 
     let results = Array.from(documents.values());
 
-    // Apply filters
     if (jobNumber) {
       results = results.filter(doc => doc.jobNumber === jobNumber);
     }
@@ -77,16 +76,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Sort by upload date (newest first)
     results.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
 
     return NextResponse.json({ documents: results });
   } catch (error) {
     console.error('Error fetching documents:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch documents' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 });
   }
 }
 
@@ -103,24 +98,33 @@ export async function POST(request: NextRequest) {
     const id = uuidv4();
     const filename = file.name;
     const buffer = Buffer.from(await file.arrayBuffer());
-    const base64 = buffer.toString('base64');
     const mimeType = file.type;
 
-    // For images, run OCR directly
     let extractedText = '';
+    let pageCount = 1;
 
-    if (mimeType.startsWith('image/')) {
+    console.log(`Processing file: ${filename} (${mimeType})`);
+
+    if (mimeType === 'application/pdf') {
+      // PDFs need to be converted to images for OCR to work on scanned documents
+      return NextResponse.json({
+        success: false,
+        error: 'PDF_NEEDS_CONVERSION',
+        message: 'Scanned PDFs need to be converted to images for OCR. Please use Windows Snipping Tool (Win+Shift+S) to screenshot each page and upload those instead. This gives the best OCR accuracy.',
+        filename,
+      }, { status: 400 });
+    } else if (mimeType.startsWith('image/')) {
+      // Process image with OCR
+      const base64 = buffer.toString('base64');
       const dataUrl = `data:${mimeType};base64,${base64}`;
       
-      console.log('Starting OCR for:', filename);
+      console.log('Starting OCR for image:', filename);
       const result = await Tesseract.recognize(dataUrl, 'eng', {
-        logger: (m) => console.log('OCR:', m.status, m.progress),
+        logger: (m) => console.log('OCR:', m.status, m.progress?.toFixed(2)),
       });
       
       extractedText = result.data.text;
       console.log('OCR complete, extracted', extractedText.length, 'characters');
-    } else if (mimeType === 'application/pdf') {
-      extractedText = '[PDF files need to be converted to images first. Please upload JPG/PNG screenshots of the batch sheets.]';
     } else {
       return NextResponse.json(
         { error: 'Unsupported file type. Please upload images (JPG, PNG).' },
@@ -128,7 +132,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Extract metadata from OCR text
+    // Extract metadata from text
     const metadata = extractMetadata(extractedText);
 
     // Create document record
@@ -140,26 +144,23 @@ export async function POST(request: NextRequest) {
       productName: metadata.productName,
       extractedText,
       uploadedAt: new Date().toISOString(),
-      fileUrl: null, // Would be storage URL in production
-      pageCount: 1,
+      fileUrl: null,
+      pageCount,
       metadata: {},
     };
 
-    // Store in memory
     documents.set(id, doc);
 
     console.log('Document saved:', {
       id,
       filename,
+      pageCount,
       jobNumber: metadata.jobNumber,
       formulaId: metadata.formulaId,
-      productName: metadata.productName,
+      textLength: extractedText.length,
     });
 
-    return NextResponse.json({
-      success: true,
-      document: doc,
-    });
+    return NextResponse.json({ success: true, document: doc });
   } catch (error) {
     console.error('Error processing document:', error);
     return NextResponse.json(

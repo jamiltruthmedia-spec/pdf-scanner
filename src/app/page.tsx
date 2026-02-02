@@ -8,6 +8,7 @@ export default function Home() {
   const [searchQuery, setSearchQuery] = useState('');
   const [jobNumberFilter, setJobNumberFilter] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [dragActive, setDragActive] = useState(false);
 
@@ -29,6 +30,10 @@ export default function Home() {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
+    setUploadStatus(null);
+
+    let successCount = 0;
+    let errorMessages: string[] = [];
 
     for (const file of Array.from(files)) {
       const formData = new FormData();
@@ -40,17 +45,30 @@ export default function Home() {
           body: formData,
         });
         const data = await res.json();
+        
         if (data.success) {
           console.log('Uploaded:', data.document);
+          successCount++;
+        } else if (data.error === 'PDF_NEEDS_CONVERSION') {
+          errorMessages.push(`📄 ${file.name}: PDFs need to be screenshots. Use Win+Shift+S to capture each page as an image.`);
         } else {
-          console.error('Upload failed:', data.error);
+          errorMessages.push(`❌ ${file.name}: ${data.error || data.message || 'Upload failed'}`);
         }
       } catch (error) {
         console.error('Upload error:', error);
+        errorMessages.push(`❌ ${file.name}: Network error`);
       }
     }
 
     setIsUploading(false);
+    
+    if (errorMessages.length > 0) {
+      setUploadStatus(errorMessages.join('\n'));
+    } else if (successCount > 0) {
+      setUploadStatus(`✅ ${successCount} file${successCount > 1 ? 's' : ''} uploaded and processed!`);
+      setTimeout(() => setUploadStatus(null), 3000);
+    }
+    
     fetchDocuments();
   };
 
@@ -119,7 +137,7 @@ export default function Home() {
 
         {/* Upload Zone */}
         <div
-          className={`mb-8 border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+          className={`mb-4 border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
             dragActive
               ? 'border-blue-500 bg-blue-500/10'
               : 'border-gray-700 hover:border-gray-600'
@@ -132,7 +150,8 @@ export default function Home() {
           {isUploading ? (
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
-              <p className="text-gray-400">Processing document...</p>
+              <p className="text-gray-400">Processing document with OCR...</p>
+              <p className="text-xs text-gray-500">This may take 10-20 seconds</p>
             </div>
           ) : (
             <>
@@ -140,7 +159,7 @@ export default function Home() {
                 type="file"
                 id="fileInput"
                 multiple
-                accept="image/*,.pdf"
+                accept="image/*"
                 onChange={(e) => handleUpload(e.target.files)}
                 className="hidden"
               />
@@ -150,15 +169,29 @@ export default function Home() {
               >
                 <span className="text-4xl">📤</span>
                 <p className="text-lg font-medium">
-                  Drop files here or click to upload
+                  Drop images here or click to upload
                 </p>
                 <p className="text-sm text-gray-400">
-                  Supports JPG, PNG images (PDF support coming soon)
+                  Upload screenshots of batch sheets (JPG, PNG)
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 Tip: Use <kbd className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-300">Win+Shift+S</kbd> to screenshot pages from scanned PDFs
                 </p>
               </label>
             </>
           )}
         </div>
+
+        {/* Upload Status Message */}
+        {uploadStatus && (
+          <div className={`mb-6 p-4 rounded-lg whitespace-pre-wrap text-sm ${
+            uploadStatus.includes('✅') 
+              ? 'bg-green-500/10 border border-green-500/30 text-green-400'
+              : 'bg-yellow-500/10 border border-yellow-500/30 text-yellow-400'
+          }`}>
+            {uploadStatus}
+          </div>
+        )}
 
         {/* Documents Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -191,10 +224,11 @@ export default function Home() {
           ))}
         </div>
 
-        {documents.length === 0 && (
+        {documents.length === 0 && !uploadStatus && (
           <div className="text-center py-12 text-gray-500">
             <span className="text-4xl block mb-4">📭</span>
-            <p>No documents yet. Upload some batch sheets to get started!</p>
+            <p className="mb-2">No documents yet. Upload some batch sheets to get started!</p>
+            <p className="text-sm">Screenshot your scanned PDFs with Win+Shift+S and upload the images.</p>
           </div>
         )}
       </main>
