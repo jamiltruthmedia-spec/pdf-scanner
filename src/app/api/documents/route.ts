@@ -3,6 +3,18 @@ import { getSupabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
 import Tesseract from 'tesseract.js';
 
+// Increase body size limit for large PDF uploads (50MB)
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+  },
+};
+
+// For App Router, also export these
+export const maxDuration = 60; // 60 second timeout for large uploads
+
 // Extract job number, formula ID, and product name from OCR text
 function extractMetadata(text: string) {
   const metadata: {
