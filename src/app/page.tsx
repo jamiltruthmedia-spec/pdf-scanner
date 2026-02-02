@@ -18,6 +18,24 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [selectedDoc, setSelectedDoc] = useState<Document | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const [loadingPdf, setLoadingPdf] = useState<string | null>(null);
+
+  const openPdf = async (docId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLoadingPdf(docId);
+    try {
+      const res = await fetch(`/api/documents/${docId}/download`);
+      const data = await res.json();
+      if (data.url) {
+        window.open(data.url, '_blank');
+      } else {
+        alert('Could not load PDF: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Failed to load PDF');
+    }
+    setLoadingPdf(null);
+  };
 
   const fetchDocuments = useCallback(async () => {
     const params = new URLSearchParams();
@@ -275,10 +293,18 @@ export default function Home() {
                     Error: {doc.processingError}
                   </p>
                 ) : null}
-                <div className="mt-3 pt-3 border-t border-gray-800 flex justify-between text-xs text-gray-500">
+                <div className="mt-3 pt-3 border-t border-gray-800 flex justify-between items-center text-xs text-gray-500">
                   <span>{new Date(doc.uploadedAt).toLocaleDateString()}</span>
-                  {doc.formulaId && <span>Formula: {doc.formulaId}</span>}
-                  {doc.pageCount > 0 && <span>{doc.pageCount} page{doc.pageCount > 1 ? 's' : ''}</span>}
+                  {doc.filePath && isReady && (
+                    <button
+                      onClick={(e) => openPdf(doc.id, e)}
+                      disabled={loadingPdf === doc.id}
+                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      {loadingPdf === doc.id ? '⏳' : '📄'} View PDF
+                    </button>
+                  )}
+                  {doc.pageCount > 0 && <span>{doc.pageCount} pg</span>}
                 </div>
               </div>
             );
@@ -330,10 +356,23 @@ export default function Home() {
               </button>
             </div>
             <div className="p-4 overflow-y-auto max-h-[60vh]">
+              {selectedDoc.filePath && (
+                <button
+                  onClick={(e) => openPdf(selectedDoc.id, e)}
+                  disabled={loadingPdf === selectedDoc.id}
+                  className="w-full mb-4 px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {loadingPdf === selectedDoc.id ? (
+                    <>⏳ Loading...</>
+                  ) : (
+                    <>📄 Open Original PDF</>
+                  )}
+                </button>
+              )}
               <h3 className="text-sm font-medium text-gray-400 mb-2">
-                Extracted Text
+                Extracted Text (for search indexing)
               </h3>
-              <pre className="whitespace-pre-wrap text-sm bg-gray-950 p-4 rounded-lg border border-gray-800 font-mono">
+              <pre className="whitespace-pre-wrap text-sm bg-gray-950 p-4 rounded-lg border border-gray-800 font-mono text-xs">
                 {selectedDoc.extractedText || 'No text extracted yet.'}
               </pre>
             </div>
