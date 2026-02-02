@@ -1,7 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { createClient } from '@supabase/supabase-js';
 import { Document, ProcessingStatus } from '@/lib/types';
+
+// Client-side Supabase for direct uploads (bypasses Vercel 4.5MB limit)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const statusConfig: Record<ProcessingStatus, { label: string; color: string; icon: string }> = {
   pending: { label: 'Queued', color: 'bg-yellow-500/20 text-yellow-400', icon: '⏳' },
@@ -65,28 +72,63 @@ export default function Home() {
     const errorMessages: string[] = [];
 
     for (const file of Array.from(files)) {
-      const formData = new FormData();
-      formData.append('file', file);
-
       try {
-        const res = await fetch('/api/documents', {
-          method: 'POST',
-          body: formData,
-        });
-        const data = await res.json();
-        
-        if (data.success) {
-          if (data.queued) {
-            queuedCount++;
-          } else {
-            successCount++;
+        // For PDFs: upload directly to Supabase storage (bypasses Vercel 4.5MB limit)
+        if (file.type === 'application/pdf') {
+          const id = crypto.randomUUID();
+          const filePath = `uploads/${id}/${file.name}`;
+          
+          // Direct upload to Supabase storage
+          const { error: uploadError } = await supabase.storage
+            .from('pdf-uploads')
+            .upload(filePath, file, { contentType: file.type });
+          
+          if (uploadError) {
+            errorMessages.push(`❌ ${file.name}: ${uploadError.message}`);
+            continue;
           }
+          
+          // Create database record
+          const { error: dbError } = await supabase
+            .from('pdf_documents')
+            .insert({
+              id,
+              filename: file.name,
+              content_type: file.type,
+              file_path: filePath,
+              processing_status: 'pending',
+            });
+          
+          if (dbError) {
+            errorMessages.push(`❌ ${file.name}: ${dbError.message}`);
+            continue;
+          }
+          
+          queuedCount++;
         } else {
-          errorMessages.push(`❌ ${file.name}: ${data.error || 'Upload failed'}`);
+          // For images: use API route (smaller files, instant OCR)
+          const formData = new FormData();
+          formData.append('file', file);
+          
+          const res = await fetch('/api/documents', {
+            method: 'POST',
+            body: formData,
+          });
+          const data = await res.json();
+          
+          if (data.success) {
+            if (data.queued) {
+              queuedCount++;
+            } else {
+              successCount++;
+            }
+          } else {
+            errorMessages.push(`❌ ${file.name}: ${data.error || 'Upload failed'}`);
+          }
         }
       } catch (error) {
         console.error('Upload error:', error);
-        errorMessages.push(`❌ ${file.name}: Network error`);
+        errorMessages.push(`❌ ${file.name}: ${(error as Error).message || 'Network error'}`);
       }
     }
 
